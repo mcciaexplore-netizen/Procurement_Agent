@@ -1,0 +1,5 @@
+external_id,canonical_url,title,manufacturer,mpn,category,price,currency,unit,pack_quantity,moq,quantity_breaks,availability,seller_name
+STM32F407VGT6-100,https://supplier.example.in/products/stm32f407vgt6,STM32F407VGT6 ARM Cortex-M4 MCU,STMicroelectronics,STM32F407VGT6,Electronic Components,485.00,INR,piece,1,100,1-99:485;100-499:450;500+:420,In stock,Cooperative Electronics
+STM32F407VGT6-500,https://supplier.example.in/products/stm32f407vgt6-bulk,STM32F407VGT6 ARM Cortex-M4 MCU bulk,STMicroelectronics,STM32F407VGT6,Electronic Components,420.00,INR,piece,1,500,500+:420,In stock,Cooperative Electronics
+TMP36-QUOTE,https://supplier.example.in/products/tmp36,Analog temperature sensor TMP36,Analog Devices,TMP36,Industrial Sensors,Request quote,INR,piece,1,50,,Lead time 7 days,Cooperative Electronics
+SS304-2MM,https://supplier.example.in/products/ss304-sheet-2mm,SS304 sheet 2 mm 4 x 8 ft,,SS304-2MM,Industrial Materials,7800.00,INR,sheet,1,5,1-4:7800;5+:7400,Available in Mumbai,Cooperative Metals

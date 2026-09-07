@@ -1,0 +1,23 @@
+[
+  {
+    "name": "exact microcontroller MPN",
+    "query": "STM32F407VGT6",
+    "quantity": 500,
+    "expected_mpn": "STM32F407VGT6",
+    "top_n": 3
+  },
+  {
+    "name": "quote-only sensor remains discoverable",
+    "query": "TMP36",
+    "quantity": 50,
+    "expected_mpn": "TMP36",
+    "top_n": 3
+  },
+  {
+    "name": "material part identifier",
+    "query": "SS304 2mm",
+    "quantity": 5,
+    "expected_mpn": "SS3042MM",
+    "top_n": 3
+  }
+]

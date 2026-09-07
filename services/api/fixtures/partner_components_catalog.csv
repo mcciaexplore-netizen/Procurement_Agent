@@ -1,0 +1,3 @@
+external_id,canonical_url,title,manufacturer,mpn,category,price,currency,unit,pack_quantity,moq,quantity_breaks,availability,seller_name
+P-STM32F407VGT6-250,https://partner.example.in/catalogue/stm32f407vgt6,STM32F407VGT6 MCU tray,STMicroelectronics,STM32F407VGT6,Electronic Components,450.00,INR,piece,1,250,1-249:450;250+:430,In stock,Partner Components
+P-TMP36-100,https://partner.example.in/catalogue/tmp36,Analog temperature sensor TMP36,Analog Devices,TMP36,Industrial Sensors,Request quote,INR,piece,1,100,,Available to quote,Partner Components

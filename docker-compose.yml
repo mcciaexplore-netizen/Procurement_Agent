@@ -1,0 +1,117 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: procurement
+      POSTGRES_USER: procurement
+      POSTGRES_PASSWORD: procurement_dev_only
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U procurement -d procurement"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >-
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+        mc mb --ignore-existing local/procurement-raw-captures
+
+  api:
+    build: ./services/api
+    environment:
+      APP_ENV: development
+      CATALOG_BACKEND: memory
+      DATABASE_URL: postgresql://procurement:procurement_dev_only@postgres:5432/procurement
+      ADMIN_API_TOKEN: local-development-change-me
+      QUERY_PARSER_ENABLED: "true"
+      RAW_CAPTURE_ROOT: /data/raw-captures
+      RAW_CAPTURE_BACKEND: s3
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_RAW_CAPTURE_BUCKET: procurement-raw-captures
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      CORS_ORIGINS: http://localhost:3000
+      MOUSER_API_KEY: ${MOUSER_API_KEY:-}
+      MOUSER_MAX_CALLS_PER_MINUTE: ${MOUSER_MAX_CALLS_PER_MINUTE:-5}
+      MOUSER_MAX_CALLS_PER_DAY: ${MOUSER_MAX_CALLS_PER_DAY:-100}
+    ports:
+      - "8000:8000"
+    volumes:
+      - raw_captures:/data/raw-captures
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  worker:
+    build: ./services/api
+    command: python -m worker.run
+    environment:
+      APP_ENV: development
+      CATALOG_BACKEND: memory
+      DATABASE_URL: postgresql://procurement:procurement_dev_only@postgres:5432/procurement
+      RAW_CAPTURE_ROOT: /data/raw-captures
+      RAW_CAPTURE_BACKEND: s3
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_RAW_CAPTURE_BUCKET: procurement-raw-captures
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+    volumes:
+      - raw_captures:/data/raw-captures
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  web:
+    build: ./apps/web
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  minio_data:
+  raw_captures:

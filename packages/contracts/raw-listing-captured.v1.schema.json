@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://procurement.example/contracts/raw-listing-captured.v1.schema.json",
+  "title": "RawListingCaptured v1",
+  "type": "object",
+  "required": ["event_id", "source_id", "capture_id", "request_url", "fetched_at", "content_hash", "parser_version"],
+  "properties": {
+    "event_id": {"type": "string", "format": "uuid"},
+    "source_id": {"type": "string"},
+    "capture_id": {"type": "string", "format": "uuid"},
+    "request_url": {"type": "string", "format": "uri"},
+    "fetched_at": {"type": "string", "format": "date-time"},
+    "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "parser_version": {"type": "string"},
+    "raw_snapshot_pointer": {"type": "string"}
+  },
+  "additionalProperties": false
+}
