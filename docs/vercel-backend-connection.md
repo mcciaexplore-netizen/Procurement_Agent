@@ -5,8 +5,13 @@ visitor's own computer. It cannot reach the FastAPI service running on a local
 Docker Desktop installation.
 
 Deploy `services/api` as a separate Docker web service on a container host,
-using managed PostgreSQL and object storage for a real environment. Then set
-these two values and redeploy the frontend:
+using managed PostgreSQL and object storage for a real environment. The API
+container initializes the initial schema once when it detects an empty database.
+Then set these two values and redeploy the frontend:
+
+For a Docker host, use the repository root as the build context and
+`services/api/Dockerfile` as the Dockerfile path. This includes the initial
+database migration in the API image.
 
 1. In the API host, set `CORS_ORIGINS` to the exact Vercel frontend URL, for
    example `https://your-project.vercel.app`.

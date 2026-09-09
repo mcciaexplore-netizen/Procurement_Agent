@@ -50,7 +50,9 @@ services:
         mc mb --ignore-existing local/procurement-raw-captures
 
   api:
-    build: ./services/api
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
     environment:
       APP_ENV: development
       CATALOG_BACKEND: memory
@@ -80,7 +82,9 @@ services:
         condition: service_completed_successfully
 
   worker:
-    build: ./services/api
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
     command: python -m worker.run
     environment:
       APP_ENV: development
