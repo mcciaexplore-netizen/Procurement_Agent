@@ -18,11 +18,16 @@ from app.domain.models import MatchDecision, PriceStatus, Source, SourcePolicy, 
 from app.domain.policy import PolicyViolation
 from app.domain.query_understanding import parse_query
 from app.security import AdminPrincipal, AdminRole, require_role
-from app.operational import Readiness, SlidingWindowRateLimiter
+from app.operational import Readiness, SlidingWindowRateLimiter, configured_origins
 
 
 app = FastAPI(title="AI Procurement Search API", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=configured_origins(os.getenv("CORS_ORIGINS")),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 catalog: Catalog = build_catalog()
 public_rate_limiter = SlidingWindowRateLimiter(int(os.getenv("PUBLIC_RATE_LIMIT_PER_MINUTE", "120")))
 

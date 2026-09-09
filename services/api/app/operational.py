@@ -9,6 +9,12 @@ from threading import Lock
 from time import monotonic
 
 
+def configured_origins(value: str | None) -> list[str]:
+    """Parse a deployment-supplied, explicit CORS allow-list."""
+    origins = [origin.strip().rstrip("/") for origin in (value or "").split(",") if origin.strip()]
+    return origins or ["http://localhost:3000"]
+
+
 @dataclass(frozen=True, slots=True)
 class Readiness:
     sources: int
