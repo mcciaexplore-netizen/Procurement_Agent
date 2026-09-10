@@ -19,10 +19,20 @@ class RawCaptureStore(Protocol):
 class FilesystemRawCaptureStore:
     def __init__(self, root: Path | None = None) -> None:
         configured = os.getenv("RAW_CAPTURE_ROOT")
-        # Resolve the repository data directory, not the caller's current
-        # directory. This keeps local commands and test runs consistent.
-        repository_default = Path(__file__).resolve().parents[4] / "data" / "raw-captures"
-        self.root = root or (Path(configured) if configured else repository_default)
+        self.root = root or (Path(configured) if configured else self._default_root())
+
+    @staticmethod
+    def _default_root() -> Path:
+        """Use the repository data directory locally, or /app/data in a container.
+
+        A fixed ``parents[n]`` lookup is unsafe because production containers
+        intentionally have a much shallower file layout than the repository.
+        """
+        module_path = Path(__file__).resolve()
+        for candidate in module_path.parents:
+            if (candidate / "services" / "api").is_dir() and (candidate / "infra").is_dir():
+                return candidate / "data" / "raw-captures"
+        return Path.cwd() / "data" / "raw-captures"
 
     def put(self, source_id: str, content_hash: str, payload: bytes) -> str:
         if len(content_hash) != 64 or any(char not in "0123456789abcdef" for char in content_hash):
