@@ -55,6 +55,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       APP_ENV: development
+      PORT: 8000
       CATALOG_BACKEND: memory
       DATABASE_URL: postgresql://procurement:procurement_dev_only@postgres:5432/procurement
       ADMIN_API_TOKEN: local-development-change-me
