@@ -182,7 +182,7 @@ def compare(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@app.post("/outbound/{offer_id}", status_code=302)
+@app.api_route("/outbound/{offer_id}", methods=["GET", "POST"], status_code=302)
 def outbound(offer_id: str, placement: str = "result", session_pseudonym: str | None = None) -> RedirectResponse:
     try:
         target = catalog.outbound(offer_id, placement, session_pseudonym)
