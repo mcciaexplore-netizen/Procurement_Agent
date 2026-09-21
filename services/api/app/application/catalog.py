@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from app.domain.models import (
     Offer,
@@ -466,6 +466,12 @@ class Catalog:
         offer = self.offer_detail(offer_id)
         source = self.get_source(offer.source_id)
         assert_outbound_url_allowed(source, offer.canonical_url)
+        target = offer.canonical_url
+        # Seeded demo feeds intentionally use reserved example.in URLs. Never
+        # send a user to those dead hosts; provide a real supplier lookup until
+        # the fixture is replaced by an approved live feed.
+        if (urlparse(target).hostname or "").endswith(".example.in"):
+            target = f"https://www.mouser.com/c/?q={quote(offer.mpn or offer.external_id)}"
         self.outbound_events.append(OutboundEvent(
             id=new_id(),
             offer_id=offer_id,
@@ -475,7 +481,7 @@ class Catalog:
             redirect_status=302,
         ))
         self.persist()
-        return offer.canonical_url
+        return target
 
 
 def build_seeded_catalog(persistence: CatalogPersistence | None = None, raw_store: RawCaptureStore | None = None) -> Catalog:
