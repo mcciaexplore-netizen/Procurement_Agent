@@ -6,6 +6,18 @@ import os
 from pathlib import Path
 
 
+def initial_schema_path() -> Path:
+    configured = os.getenv("MIGRATION_PATH")
+    if configured:
+        return Path(configured)
+    module_path = Path(__file__).resolve()
+    for candidate in module_path.parents:
+        migration = candidate / "infra" / "postgres" / "migrations" / "001_initial.sql"
+        if migration.is_file():
+            return migration
+    raise FileNotFoundError("initial PostgreSQL migration was not found")
+
+
 def apply_initial_schema() -> None:
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
@@ -19,7 +31,7 @@ def apply_initial_schema() -> None:
         if cursor.fetchone()[0] is not None:
             print("PostgreSQL schema is ready.", flush=True)
             return
-        schema_path = Path(os.getenv("MIGRATION_PATH", Path(__file__).resolve().parents[3] / "infra" / "postgres" / "migrations" / "001_initial.sql"))
+        schema_path = initial_schema_path()
         print("Applying initial PostgreSQL schema…", flush=True)
         cursor.execute(schema_path.read_text(encoding="utf-8"))
         print("Initial PostgreSQL schema is ready.", flush=True)

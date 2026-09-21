@@ -23,3 +23,18 @@ The API host needs its own production secrets and infrastructure values:
 `DATABASE_URL`, `RAW_CAPTURE_BACKEND=s3`, S3 bucket/credentials,
 `ADMIN_API_TOKENS`, and `MOUSER_API_KEY`. Do not add any of these to Vercel's
 frontend variables: `NEXT_PUBLIC_*` values are visible to browsers.
+
+## Environment contract
+
+| Location | Variable | Value |
+| --- | --- | --- |
+| Render API | `PORT` | `10000` |
+| Render API | `CORS_ORIGINS` | Exact Vercel HTTPS origin, no trailing slash |
+| Render API | `DATABASE_URL` | Render PostgreSQL internal connection string |
+| Render API | `RAW_CAPTURE_BACKEND` | `s3` for persistent deployment storage |
+| Render API | `S3_RAW_CAPTURE_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT_URL` | Managed S3-compatible storage values |
+| Render API | `MOUSER_API_KEY` | Mouser secret, stored only in Render |
+| Vercel frontend | `NEXT_PUBLIC_API_BASE_URL` | Public Render API HTTPS URL, no trailing slash |
+
+After changing `NEXT_PUBLIC_API_BASE_URL`, redeploy the Vercel frontend because
+Next.js embeds browser-visible variables during its build.

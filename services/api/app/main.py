@@ -7,27 +7,22 @@ from dataclasses import asdict
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from app.application.catalog import Catalog, NotFoundError, build_catalog
 from app.application.mouser import MOUSER_SOURCE_ID, MOUSER_SCOPE, configured_mouser_service
 from app.connectors.mouser import MouserError
+from app.cors import configure_cors
 from app.domain.models import MatchDecision, PriceStatus, Source, SourcePolicy, SourceStatus, serialize
 from app.domain.policy import PolicyViolation
 from app.domain.query_understanding import parse_query
 from app.security import AdminPrincipal, AdminRole, require_role
-from app.operational import Readiness, SlidingWindowRateLimiter, configured_origins
+from app.operational import Readiness, SlidingWindowRateLimiter
 
 
 app = FastAPI(title="AI Procurement Search API", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=configured_origins(os.getenv("CORS_ORIGINS")),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+configure_cors(app)
 catalog: Catalog = build_catalog()
 public_rate_limiter = SlidingWindowRateLimiter(int(os.getenv("PUBLIC_RATE_LIMIT_PER_MINUTE", "120")))
 
