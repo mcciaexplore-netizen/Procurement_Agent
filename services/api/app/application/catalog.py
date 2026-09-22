@@ -471,7 +471,9 @@ class Catalog:
         # send a user to those dead hosts; provide a real supplier lookup until
         # the fixture is replaced by an approved live feed.
         if (urlparse(target).hostname or "").endswith(".example.in"):
-            target = f"https://www.mouser.com/c/?q={quote(offer.mpn or offer.external_id)}"
+            product = self.products.get(offer.product_id)
+            part_number = (product.mpn if product and product.mpn else offer.external_id)
+            target = f"https://www.mouser.com/c/?q={quote(part_number)}"
         self.outbound_events.append(OutboundEvent(
             id=new_id(),
             offer_id=offer_id,
