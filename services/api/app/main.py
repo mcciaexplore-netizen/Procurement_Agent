@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from app.application.catalog import Catalog, NotFoundError, build_catalog
-from app.application.mouser import MOUSER_SOURCE_ID, MOUSER_SCOPE, configured_mouser_service
+from app.application.mouser import MOUSER_SOURCE_ID, MOUSER_SCOPE, MOUSER_KEYWORD_SCOPE, configured_mouser_service
 from app.application.element14 import ELEMENT14_SOURCE_ID, ELEMENT14_SCOPE, configured_element14_service
 from app.connectors.element14 import Element14Error
 from app.connectors.mouser import MouserError
@@ -115,6 +115,22 @@ def ready() -> dict[str, object]:
     return {"status": "ready", "catalog": asdict(readiness)}
 
 
+def _live_mouser_fallback(query: str) -> str | None:
+    """Best-effort live Mouser keyword search when the local catalog has nothing.
+
+    Only runs when a Mouser source is registered, approved, and an API key is
+    configured; failures (quota, connectivity, provider errors) are reported
+    as a warning rather than breaking the search response.
+    """
+    if MOUSER_SOURCE_ID not in catalog.sources or not os.getenv("MOUSER_API_KEY"):
+        return None
+    try:
+        configured_mouser_service(catalog).search_keyword(query)
+    except (MouserError, RuntimeError, ValueError, PolicyViolation) as error:
+        return f"Live vendor search unavailable: {error}"
+    return None
+
+
 @app.get("/search")
 def search(
     q: str = Query(min_length=1),
@@ -138,6 +154,15 @@ def search(
         all_groups = catalog.search(effective_query, effective_quantity, category, manufacturer, price_status, fresh_only, max_price_inr)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+    live_warning = None
+    if not all_groups and effective_query.strip():
+        live_warning = _live_mouser_fallback(effective_query)
+        all_groups = catalog.search(effective_query, effective_quantity, category, manufacturer, price_status, fresh_only, max_price_inr)
+
+    warnings = ["Results cover approved sources only. Price, tax, freight, and availability are never inferred."]
+    if live_warning:
+        warnings.append(live_warning)
     return {
         "query": q,
         "quantity": effective_quantity,
@@ -149,7 +174,7 @@ def search(
         },
         "groups": all_groups[(page - 1) * page_size: page * page_size],
         "pagination": {"page": page, "page_size": page_size, "total_groups": len(all_groups)},
-        "warnings": ["Results cover approved sources only. Price, tax, freight, and availability are never inferred."],
+        "warnings": warnings,
     }
 
 
@@ -304,7 +329,7 @@ def submit_mouser_source(principal: AdminPrincipal = Depends(require_role(AdminR
     policy = SourcePolicy(
         version="mouser-search-v1",
         approved=False,
-        allowed_scopes=(MOUSER_SCOPE,),
+        allowed_scopes=(MOUSER_SCOPE, MOUSER_KEYWORD_SCOPE),
         allowed_domains=("www.mouser.com", "in.mouser.com"),
         rate_budget_per_minute=5,
         freshness_sla_hours=24,
