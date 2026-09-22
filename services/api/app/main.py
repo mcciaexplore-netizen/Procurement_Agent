@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from app.application.catalog import Catalog, NotFoundError, build_catalog
 from app.application.mouser import MOUSER_SOURCE_ID, MOUSER_SCOPE, configured_mouser_service
+from app.application.element14 import ELEMENT14_SOURCE_ID, ELEMENT14_SCOPE, configured_element14_service
+from app.connectors.element14 import Element14Error
 from app.connectors.mouser import MouserError
 from app.cors import configure_cors
 from app.domain.models import MatchDecision, PriceStatus, Source, SourcePolicy, SourceStatus, serialize
@@ -93,6 +95,9 @@ class MatchReviewDecisionRequest(BaseModel):
 
 
 class MouserLookupRequest(BaseModel):
+    part_number: str = Field(min_length=1, max_length=128)
+
+class Element14LookupRequest(BaseModel):
     part_number: str = Field(min_length=1, max_length=128)
 
 
@@ -307,3 +312,21 @@ def submit_mouser_source(principal: AdminPrincipal = Depends(require_role(AdminR
     )
     catalog.register_source(source, actor=principal.actor)
     return serialize(catalog.set_source_policy(MOUSER_SOURCE_ID, policy, principal.actor))
+
+@app.post("/admin/element14/lookups", status_code=201)
+def element14_lookup(request: Element14LookupRequest, _principal: AdminPrincipal = Depends(require_role(AdminRole.OPERATOR))) -> object:
+    if ELEMENT14_SOURCE_ID not in catalog.sources:
+        raise HTTPException(status_code=409, detail="element14 source must be registered and approved before live lookup")
+    try:
+        return serialize(configured_element14_service(catalog).lookup_part_number(request.part_number))
+    except (Element14Error, RuntimeError, ValueError, PolicyViolation) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+@app.post("/admin/element14/source-submissions", status_code=201)
+def submit_element14_source(principal: AdminPrincipal = Depends(require_role(AdminRole.SOURCE_APPROVER))) -> object:
+    if ELEMENT14_SOURCE_ID in catalog.sources:
+        raise HTTPException(status_code=409, detail="element14 source is already registered")
+    source = Source(id=ELEMENT14_SOURCE_ID, name="element14 Product Search API", base_url="https://api.element14.com", owner="MCCIA procurement operations", status=SourceStatus.DRAFT, policy=None)
+    policy = SourcePolicy(version="element14-search-v1", approved=False, allowed_scopes=(ELEMENT14_SCOPE,), allowed_domains=("in.element14.com", "www.element14.com", "uk.farnell.com", "www.farnell.com"), rate_budget_per_minute=5, freshness_sla_hours=24, evidence_url="https://partner.element14.com/docs/Product_Search_API_REST__Description")
+    catalog.register_source(source, actor=principal.actor)
+    return serialize(catalog.set_source_policy(ELEMENT14_SOURCE_ID, policy, principal.actor))
