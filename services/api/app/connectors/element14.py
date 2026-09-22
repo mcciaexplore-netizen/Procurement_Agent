@@ -46,7 +46,10 @@ def _number(value: object) -> str:
         return ""
 
 def element14_products_to_rows(response: dict[str, object], store_id: str) -> list[dict[str, str]]:
-    result = response.get("keywordSearchReturn")
+    # versionNumber=1.4 returns a differently-named envelope for a
+    # manuPartNum: term (manufacturerPartNumberSearchReturn) than for an
+    # any:/keyword term (keywordSearchReturn); accept either.
+    result = response.get("keywordSearchReturn") or response.get("manufacturerPartNumberSearchReturn")
     products = result.get("products") if isinstance(result, dict) else None
     if not isinstance(products, list):
         raise Element14Error("element14 response does not contain product results")
@@ -61,8 +64,12 @@ def element14_products_to_rows(response: dict[str, object], store_id: str) -> li
         first = prices[0] if isinstance(prices, list) and prices and isinstance(prices[0], dict) else {}
         price = _number(first.get("cost"))
         mpn = _text(item.get("translatedManufacturerPartNumber"))
+        supplied_url = _text(item.get("productURL"))
+        parsed_url = urlparse(supplied_url)
+        allowed_hosts = ("element14.com", "farnell.com", "newark.com")
+        canonical_url = supplied_url if parsed_url.scheme == "https" and any((parsed_url.hostname or "").endswith(host) for host in allowed_hosts) else f"https://in.element14.com/search?q={quote(mpn or sku, safe='')}"
         rows.append({
-            "external_id": sku, "canonical_url": f"https://in.element14.com/{quote(sku, safe='')}",
+            "external_id": sku, "canonical_url": canonical_url,
             "title": title, "seller_name": "element14", "manufacturer": _text(item.get("brandName")),
             "mpn": mpn, "category": "Electronic Components", "price": price, "currency": "INR" if price else "",
             "unit": _text(item.get("unitOfMeasure")).lower() or "each", "price_status": "public" if price else "unknown",
@@ -79,10 +86,19 @@ class Element14SearchClient:
     transport: JsonTransport
     store_id: str = "in.element14.com"
 
+    def _search(self, term: str, records: int) -> tuple[dict[str, object], list[dict[str, str]]]:
+        params = {"versionNumber": "1.4", "term": term, "storeInfo.id": self.store_id, "resultsSettings.offset": "0", "resultsSettings.numberOfResults": str(records), "resultsSettings.responseGroup": "medium", "callInfo.responseDataFormat": "JSON"}
+        response = self.transport.get_json(ELEMENT14_ENDPOINT, params)
+        return response, element14_products_to_rows(response, self.store_id)
+
     def search_part_number(self, part_number: str) -> tuple[dict[str, object], list[dict[str, str]]]:
         normalized = part_number.strip()
         if not normalized or len(normalized) > 128:
             raise ValueError("part_number must contain between 1 and 128 characters")
-        params = {"term": f"manuPartNum:{normalized}", "storeInfo.id": self.store_id, "resultsSettings.offset": "0", "resultsSettings.numberOfResults": "20", "resultsSettings.responseGroup": "medium", "callInfo.responseDataFormat": "JSON"}
-        response = self.transport.get_json(ELEMENT14_ENDPOINT, params)
-        return response, element14_products_to_rows(response, self.store_id)
+        return self._search(f"manuPartNum:{normalized}", records=20)
+
+    def search_keyword(self, keyword: str, records: int = 10) -> tuple[dict[str, object], list[dict[str, str]]]:
+        normalized = keyword.strip()
+        if not normalized or len(normalized) > 128:
+            raise ValueError("keyword must contain between 1 and 128 characters")
+        return self._search(f"any:{normalized}", records=records)
