@@ -50,7 +50,9 @@ export default function Home() {
       setGroups(payload.groups);
       setSelectedIds([]);
       setComparison(null);
-      setMessage(payload.groups.length ? "Prices, terms, and availability come from the source and may be incomplete." : "No current approved-source results. Try a part number or broader term.");
+      const baseMessage = payload.groups.length ? "Prices, terms, and availability come from the source and may be incomplete." : "No current approved-source results. Try a part number or broader term.";
+      const liveWarnings: string[] = (payload.warnings ?? []).slice(1);
+      setMessage(liveWarnings.length ? `${baseMessage} ${liveWarnings.join(" ")}` : baseMessage);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not reach the catalog API.");
     }
