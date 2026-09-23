@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 
 MOUSER_PART_NUMBER_ENDPOINT = "https://api.mouser.com/api/v1/search/partnumber"
+MOUSER_KEYWORD_ENDPOINT = "https://api.mouser.com/api/v1/search/keyword"
 
 
 class MouserError(RuntimeError):
@@ -73,6 +74,10 @@ def _price(value: object) -> str:
         return ""
 
 
+def _is_placeholder(value: str | None) -> bool:
+    return not value or value.strip().lower() in {"n/a", "na", "-"}
+
+
 def _canonical_url(part: dict[str, Any]) -> str:
     supplied = _text(part.get("ProductDetailUrl"))
     if supplied:
@@ -80,9 +85,15 @@ def _canonical_url(part: dict[str, Any]) -> str:
         if parsed.scheme == "https" and parsed.hostname and parsed.hostname.endswith("mouser.com"):
             return supplied
     mouser_number = _text(part.get("MouserPartNumber"))
-    if not mouser_number:
-        raise MouserError("Mouser response is missing a part number")
-    return f"https://www.mouser.com/ProductDetail/{quote(mouser_number, safe='')}"
+    if not _is_placeholder(mouser_number):
+        return f"https://www.mouser.com/ProductDetail/{quote(mouser_number, safe='')}"
+    # Mouser sometimes returns "N/A" for MouserPartNumber with no usable detail
+    # URL; fall back to a search link built from the manufacturer part number
+    # rather than emitting a broken .../ProductDetail/N%2FA link.
+    mpn = _text(part.get("ManufacturerPartNumber"))
+    if not _is_placeholder(mpn):
+        return f"https://www.mouser.com/c/?q={quote(mpn, safe='')}"
+    raise MouserError("Mouser response is missing a usable part identifier")
 
 
 def mouser_parts_to_rows(response: dict[str, object]) -> list[dict[str, str]]:
@@ -147,4 +158,20 @@ class MouserSearchClient:
             "SearchByPartRequest": {"mouserPartNumber": normalized, "partSearchOptions": "None"}
         }
         response = self.transport.post_json(MOUSER_PART_NUMBER_ENDPOINT, payload)
+        return response, mouser_parts_to_rows(response)
+
+    def search_keyword(self, keyword: str, records: int = 10) -> tuple[dict[str, object], list[dict[str, str]]]:
+        normalized = keyword.strip()
+        if not normalized or len(normalized) > 128:
+            raise ValueError("keyword must contain between 1 and 128 characters")
+        payload: dict[str, object] = {
+            "SearchByKeywordRequest": {
+                "keyword": normalized,
+                "records": records,
+                "startingRecord": 0,
+                "searchOptions": "",
+                "searchWithYourSignUpLanguage": "",
+            }
+        }
+        response = self.transport.post_json(MOUSER_KEYWORD_ENDPOINT, payload)
         return response, mouser_parts_to_rows(response)

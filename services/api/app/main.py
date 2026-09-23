@@ -115,6 +115,21 @@ def ready() -> dict[str, object]:
     return {"status": "ready", "catalog": asdict(readiness)}
 
 
+def _query_covered_by_source(groups: list[dict[str, object]], source_id: str) -> bool:
+    """True when the local catalog already has an offer from this source in the result set.
+
+    Each vendor's live fallback must be gated independently: once any source
+    (fixture data, or an earlier live fetch) has satisfied a query, a naive
+    "only fetch when there are zero results at all" check would permanently
+    starve every other vendor of the same query, since the first vendor's
+    cached offers keep the result set non-empty on every later search.
+    """
+    if source_id not in catalog.sources:
+        return True
+    source_name = catalog.sources[source_id].name
+    return any(offer["source_name"] == source_name for group in groups for offer in group["offers"])
+
+
 def _live_mouser_fallback(query: str) -> str | None:
     """Best-effort live Mouser keyword search when the local catalog has nothing.
 
@@ -127,6 +142,20 @@ def _live_mouser_fallback(query: str) -> str | None:
     try:
         configured_mouser_service(catalog).search_keyword(query)
     except (MouserError, RuntimeError, ValueError, PolicyViolation) as error:
+        return f"Live vendor search unavailable: {error}"
+    return None
+
+
+def _live_element14_fallback(query: str) -> str | None:
+    """Best-effort live element14 keyword search when the local catalog has nothing.
+
+    Mirrors _live_mouser_fallback above.
+    """
+    if ELEMENT14_SOURCE_ID not in catalog.sources or not os.getenv("ELEMENT14_API_KEY"):
+        return None
+    try:
+        configured_element14_service(catalog).search_keyword(query)
+    except (Element14Error, RuntimeError, ValueError, PolicyViolation) as error:
         return f"Live vendor search unavailable: {error}"
     return None
 
@@ -155,14 +184,24 @@ def search(
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    live_warning = None
-    if not all_groups and effective_query.strip():
-        live_warning = _live_mouser_fallback(effective_query)
-        all_groups = catalog.search(effective_query, effective_quantity, category, manufacturer, price_status, fresh_only, max_price_inr)
+    live_warnings: list[str] = []
+    if effective_query.strip():
+        fetched_live = False
+        if not _query_covered_by_source(all_groups, MOUSER_SOURCE_ID):
+            fetched_live = True
+            warning = _live_mouser_fallback(effective_query)
+            if warning:
+                live_warnings.append(warning)
+        if not _query_covered_by_source(all_groups, ELEMENT14_SOURCE_ID):
+            fetched_live = True
+            warning = _live_element14_fallback(effective_query)
+            if warning:
+                live_warnings.append(warning)
+        if fetched_live:
+            all_groups = catalog.search(effective_query, effective_quantity, category, manufacturer, price_status, fresh_only, max_price_inr)
 
     warnings = ["Results cover approved sources only. Price, tax, freight, and availability are never inferred."]
-    if live_warning:
-        warnings.append(live_warning)
+    warnings.extend(live_warnings)
     return {
         "query": q,
         "quantity": effective_quantity,

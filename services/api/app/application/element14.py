@@ -30,6 +30,17 @@ class Element14AcquisitionService:
         response, rows = self.client.search_part_number(part_number)
         return self.catalog.import_rows(ELEMENT14_SOURCE_ID, ELEMENT14_SCOPE, rows, json.dumps(response, sort_keys=True, separators=(",", ":")), parser_version="element14-search-api/v1")
 
+    def search_keyword(self, keyword: str) -> object:
+        """Perform one policy-approved, quota-limited live element14 keyword search.
+
+        Shares the part-number lookup's rate/day budget: both endpoints draw
+        from the same safety counters so total element14 call volume stays bounded.
+        """
+        if not self.per_minute.allow(ELEMENT14_SOURCE_ID): raise RuntimeError("element14 safety budget reached: retry in one minute")
+        if not self.per_day.consume(ELEMENT14_SOURCE_ID): raise RuntimeError("element14 safety budget reached: retry tomorrow")
+        response, rows = self.client.search_keyword(keyword)
+        return self.catalog.import_rows(ELEMENT14_SOURCE_ID, ELEMENT14_SCOPE, rows, json.dumps(response, sort_keys=True, separators=(",", ":")), parser_version="element14-search-api/v1")
+
 _service: Element14AcquisitionService | None = None
 def configured_element14_service(catalog: Catalog) -> Element14AcquisitionService:
     global _service

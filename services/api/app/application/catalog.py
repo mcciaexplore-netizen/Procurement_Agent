@@ -507,13 +507,75 @@ def build_seeded_catalog(persistence: CatalogPersistence | None = None, raw_stor
     return catalog
 
 
+def _ensure_mouser_source(catalog: Catalog) -> None:
+    """Auto-approve the narrow, read-only Mouser search policy when a key is present.
+
+    Runs against both freshly seeded and Postgres-loaded catalogs (an existing
+    Postgres volume already has `sources`, so it never falls into the
+    build_seeded_catalog branch below) so live keyword-search fallback works
+    without a manual admin bootstrap in every environment.
+    """
+    # Deferred import: app.application.mouser imports Catalog from this
+    # module at top level, so importing it back at module scope here would
+    # create a circular import.
+    from app.application.mouser import MOUSER_KEYWORD_SCOPE, MOUSER_SCOPE, MOUSER_SOURCE_ID
+
+    if not os.getenv("MOUSER_API_KEY") or MOUSER_SOURCE_ID in catalog.sources:
+        return
+    catalog.register_source(Source(
+        id=MOUSER_SOURCE_ID, name="Mouser Search API", base_url="https://api.mouser.com",
+        owner="MCCIA procurement operations", status=SourceStatus.ACTIVE,
+        policy=SourcePolicy(
+            version="mouser-search-v1", approved=True,
+            allowed_scopes=(MOUSER_SCOPE, MOUSER_KEYWORD_SCOPE),
+            allowed_domains=("www.mouser.com", "in.mouser.com"),
+            rate_budget_per_minute=5, freshness_sla_hours=24,
+            evidence_url="https://eu.mouser.com/en/api-search/",
+        ),
+    ))
+
+
+def _ensure_element14_source(catalog: Catalog) -> None:
+    """Auto-approve the narrow, read-only element14 search policy when a key is present.
+
+    Mirrors _ensure_mouser_source above: runs against both freshly seeded and
+    Postgres-loaded catalogs so live keyword-search fallback works without a
+    manual admin bootstrap in every environment.
+    """
+    # Deferred import: avoids importing app.application.element14 (which
+    # imports Catalog from this module) at module scope, matching the Mouser
+    # circular-import workaround above.
+    from app.application.element14 import ELEMENT14_SCOPE, ELEMENT14_SOURCE_ID
+
+    if not os.getenv("ELEMENT14_API_KEY") or ELEMENT14_SOURCE_ID in catalog.sources:
+        return
+    catalog.register_source(Source(
+        id=ELEMENT14_SOURCE_ID, name="element14 Product Search API", base_url="https://api.element14.com",
+        owner="MCCIA procurement operations", status=SourceStatus.ACTIVE,
+        policy=SourcePolicy(
+            version="element14-search-v1", approved=True,
+            allowed_scopes=(ELEMENT14_SCOPE,),
+            allowed_domains=("in.element14.com", "www.element14.com", "uk.farnell.com", "www.farnell.com"),
+            rate_budget_per_minute=5, freshness_sla_hours=24,
+            evidence_url="https://partner.element14.com/docs/Product_Search_API_REST__Description",
+        ),
+    ))
+
+
 def build_catalog() -> Catalog:
     """Choose PostgreSQL when configured; otherwise run the fixture-backed demo."""
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
-        return build_seeded_catalog()
+        catalog = build_seeded_catalog()
+        _ensure_mouser_source(catalog)
+        _ensure_element14_source(catalog)
+        return catalog
     from app.application.postgres import PostgresCatalogPersistence
 
     persistence = PostgresCatalogPersistence(database_url)
     catalog = persistence.load()
-    return catalog if catalog.sources else build_seeded_catalog(persistence)
+    if not catalog.sources:
+        catalog = build_seeded_catalog(persistence)
+    _ensure_mouser_source(catalog)
+    _ensure_element14_source(catalog)
+    return catalog

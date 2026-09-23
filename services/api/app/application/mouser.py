@@ -12,6 +12,7 @@ from app.operational import DailyRequestQuota, SlidingWindowRateLimiter
 
 MOUSER_SOURCE_ID = "mouser-search-api"
 MOUSER_SCOPE = "https://api.mouser.com/api/v1/search/partnumber"
+MOUSER_KEYWORD_SCOPE = "https://api.mouser.com/api/v1/search/keyword"
 
 
 class MouserAcquisitionService:
@@ -42,6 +43,25 @@ class MouserAcquisitionService:
         return self.catalog.import_rows(
             MOUSER_SOURCE_ID,
             MOUSER_SCOPE,
+            rows,
+            json.dumps(response, sort_keys=True, separators=(",", ":")),
+            parser_version="mouser-search-api/v1",
+        )
+
+    def search_keyword(self, keyword: str) -> object:
+        """Perform one policy-approved, quota-limited live Mouser keyword search.
+
+        Shares the part-number lookup's rate/day budget: both endpoints draw
+        from the same safety counters so total Mouser call volume stays bounded.
+        """
+        if not self.per_minute.allow(MOUSER_SOURCE_ID):
+            raise RuntimeError("Mouser safety budget reached: retry in one minute")
+        if not self.per_day.consume(MOUSER_SOURCE_ID):
+            raise RuntimeError("Mouser safety budget reached: retry tomorrow")
+        response, rows = self.client.search_keyword(keyword)
+        return self.catalog.import_rows(
+            MOUSER_SOURCE_ID,
+            MOUSER_KEYWORD_SCOPE,
             rows,
             json.dumps(response, sort_keys=True, separators=(",", ":")),
             parser_version="mouser-search-api/v1",
