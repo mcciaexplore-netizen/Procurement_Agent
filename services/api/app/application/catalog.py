@@ -309,16 +309,36 @@ class Catalog:
             })
         return sorted(reports, key=lambda report: str(report["source_name"]).lower())
 
-    def search_facets(self) -> dict[str, list[dict[str, object]]]:
-        """Return filter values from offers currently eligible for buyer search."""
+    def search_facets(
+        self,
+        query: str | None = None,
+        category: str | None = None,
+        manufacturer: str | None = None,
+        price_status: PriceStatus | None = None,
+        fresh_only: bool = False,
+    ) -> dict[str, list[dict[str, object]]]:
+        """Return filter values scoped to what `query` would actually match.
+
+        With no query, this falls back to every eligible offer in the catalog
+        (used for the initial, pre-search filter panel). Once a query is
+        present, counts are limited to offers that query would surface, so a
+        category showing "(N)" really means "picking it narrows your current
+        results to N" rather than "N exist somewhere in the whole catalog".
+        Each facet's own selected value is excluded from its own count so
+        picking "Electronic Components" doesn't shrink its own number.
+        """
         now = utc_now()
-        eligible = [
-            offer for offer in self.offers.values()
-            if self.sources[offer.source_id].status is SourceStatus.ACTIVE
-            and self.sources[offer.source_id].policy
-            and self.sources[offer.source_id].policy.approved
-            and freshness_for(offer, self.sources[offer.source_id], now).value != "stale"
-        ]
+        if query and query.strip():
+            entries = [(item.offer, item.freshness) for item in rank_offers(query, self.products, list(self.offers.values()), self.sources, now)]
+        else:
+            entries = [
+                (offer, freshness_for(offer, self.sources[offer.source_id], now))
+                for offer in self.offers.values()
+                if self.sources[offer.source_id].status is SourceStatus.ACTIVE
+                and self.sources[offer.source_id].policy
+                and self.sources[offer.source_id].policy.approved
+                and freshness_for(offer, self.sources[offer.source_id], now).value != "stale"
+            ]
 
         def counts(values: list[str | None]) -> list[dict[str, object]]:
             frequency: dict[str, int] = {}
@@ -327,10 +347,22 @@ class Catalog:
                     frequency[value] = frequency.get(value, 0) + 1
             return [{"value": value, "count": count} for value, count in sorted(frequency.items(), key=lambda item: item[0].lower())]
 
+        def scoped(*, skip_category: bool = False, skip_manufacturer: bool = False, skip_price_status: bool = False, skip_fresh_only: bool = False) -> list[tuple[Offer, "Freshness"]]:
+            category_key = category.lower().strip() if category else None
+            manufacturer_key = manufacturer.lower().strip() if manufacturer else None
+            return [
+                (offer, freshness)
+                for offer, freshness in entries
+                if (skip_category or not category_key or (self.products[offer.product_id].category or "").lower() == category_key)
+                and (skip_manufacturer or not manufacturer_key or (self.products[offer.product_id].manufacturer or "").lower() == manufacturer_key)
+                and (skip_price_status or not price_status or offer.price_status is price_status)
+                and (skip_fresh_only or not fresh_only or freshness.value == "fresh")
+            ]
+
         return {
-            "categories": counts([self.products[offer.product_id].category for offer in eligible]),
-            "manufacturers": counts([self.products[offer.product_id].manufacturer for offer in eligible]),
-            "price_statuses": counts([offer.price_status.value for offer in eligible]),
+            "categories": counts([self.products[offer.product_id].category for offer, _ in scoped(skip_category=True)]),
+            "manufacturers": counts([self.products[offer.product_id].manufacturer for offer, _ in scoped(skip_manufacturer=True)]),
+            "price_statuses": counts([offer.price_status.value for offer, _ in scoped(skip_price_status=True)]),
         }
 
     def create_match_review(self, offer_id: str, candidate_product_id: str, actor: str) -> MatchReview:

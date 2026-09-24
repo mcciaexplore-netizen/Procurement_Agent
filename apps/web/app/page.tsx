@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Offer = { id: string; seller_name: string; source_name: string; price_status: string; price: string | null; currency: string | null; unit: string | null; moq: number | null; availability: string | null; freshness: string; reasons: string[] };
 type Group = { product: { id: string; manufacturer: string | null; mpn: string | null; normalized_name: string; category: string | null }; offers: Offer[] };
@@ -17,6 +17,7 @@ export default function Home() {
   const [quantity, setQuantity] = useState("500");
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [facets, setFacets] = useState<Facets>({ categories: [], manufacturers: [], price_statuses: [] });
   const [category, setCategory] = useState("");
@@ -25,16 +26,49 @@ export default function Home() {
   const [freshOnly, setFreshOnly] = useState(false);
   const [smartQuery, setSmartQuery] = useState(true);
   const [message, setMessage] = useState("Search approved supplier offers. Coverage is intentionally limited.");
+  const isFirstFilterRender = useRef(true);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const facetsAbortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    fetch(`${apiBase()}/search/facets`).then(async (response) => {
+  // Facet counts are scoped to the current query + other active filters (each
+  // facet excludes its own selection so it shows what picking it WOULD narrow
+  // results to, not what's already been narrowed by it).
+  function facetParams() {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (category) params.set("category", category);
+    if (manufacturer) params.set("manufacturer", manufacturer);
+    if (priceStatus) params.set("price_status", priceStatus);
+    if (freshOnly) params.set("fresh_only", "true");
+    return params;
+  }
+
+  function refreshFacets() {
+    // Cancel any facet fetch still in flight so a slow, now-stale response
+    // can't land after a newer one and clobber the visible counts.
+    facetsAbortRef.current?.abort();
+    const controller = new AbortController();
+    facetsAbortRef.current = controller;
+    fetch(`${apiBase()}/search/facets?${facetParams()}`, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("Could not load filters");
       setFacets(await response.json());
-    }).catch(() => undefined);
+    }).catch((error) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+    });
+  }
+
+  useEffect(() => {
+    refreshFacets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function runSearch() {
+    // Same cancellation guard as refreshFacets: toggling filters quickly
+    // (or a filter toggle landing mid-typed-search) must not let an older
+    // in-flight response overwrite a newer one.
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
     setMessage("Searching approved sources…");
     const params = new URLSearchParams({ q: query });
     if (quantity) params.set("quantity", quantity);
@@ -44,22 +78,57 @@ export default function Home() {
     if (freshOnly) params.set("fresh_only", "true");
     if (smartQuery) params.set("parse_natural_language", "true");
     try {
-      const response = await fetch(`${apiBase()}/search?${params}`);
+      const response = await fetch(`${apiBase()}/search?${params}`, { signal: controller.signal });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "Search failed");
       setGroups(payload.groups);
       setSelectedIds([]);
+      setSelectedProductId(null);
       setComparison(null);
       const baseMessage = payload.groups.length ? "Prices, terms, and availability come from the source and may be incomplete." : "No current approved-source results. Try a part number or broader term.";
       const liveWarnings: string[] = (payload.warnings ?? []).slice(1);
       setMessage(liveWarnings.length ? `${baseMessage} ${liveWarnings.join(" ")}` : baseMessage);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setMessage(error instanceof Error ? error.message : "Could not reach the catalog API.");
     }
+    refreshFacets();
   }
 
-  function toggle(offerId: string) {
-    setSelectedIds((current) => current.includes(offerId) ? current.filter((id) => id !== offerId) : current.length < 5 ? [...current, offerId] : current);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await runSearch();
+  }
+
+  // Re-run automatically when a filter changes, so picking a category/manufacturer/
+  // price status or toggling a checkbox doesn't silently wait for a manual re-search.
+  useEffect(() => {
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
+    runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, manufacturer, priceStatus, freshOnly, smartQuery]);
+
+  function toggle(offerId: string, productId: string) {
+    if (selectedIds.includes(offerId)) {
+      const next = selectedIds.filter((id) => id !== offerId);
+      setSelectedIds(next);
+      if (next.length === 0) setSelectedProductId(null);
+      return;
+    }
+    // Offers can only be compared within the same product group (the API
+    // rejects a mixed selection), so starting a pick in a new group replaces
+    // the old selection instead of silently failing on "Compare selected".
+    if (selectedProductId && selectedProductId !== productId) {
+      setSelectedIds([offerId]);
+      setSelectedProductId(productId);
+      return;
+    }
+    if (selectedIds.length >= 5) return;
+    setSelectedIds([...selectedIds, offerId]);
+    setSelectedProductId(productId);
   }
 
   async function compare() {
@@ -82,8 +151,8 @@ export default function Home() {
     <div className="suggestions" aria-label="Popular part suggestions"><span>Try a part:</span>{partSuggestions.map((part) => <button type="button" key={part} onClick={() => setQuery(part)}>{part}</button>)}</div>
     <div className="filters" aria-label="Search filters"><div className="filter-heading"><strong>REFINE RESULTS</strong><span>Use the controls below to narrow approved supplier offers.</span></div><label className="filter-field">Category<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All categories</option>{facets.categories.map((facet) => <option key={facet.value} value={facet.value}>{facet.value} ({facet.count})</option>)}</select></label><label className="filter-field">Manufacturer<select value={manufacturer} onChange={(e) => setManufacturer(e.target.value)}><option value="">All manufacturers</option>{facets.manufacturers.map((facet) => <option key={facet.value} value={facet.value}>{facet.value} ({facet.count})</option>)}</select></label><label className="filter-field">Price status<select value={priceStatus} onChange={(e) => setPriceStatus(e.target.value)}><option value="">Any price status</option>{facets.price_statuses.map((facet) => <option key={facet.value} value={facet.value}>{facet.value.replace("_", " ")} ({facet.count})</option>)}</select></label><label className="toggle-field"><input type="checkbox" checked={freshOnly} onChange={(e) => setFreshOnly(e.target.checked)} /><span><strong>Fresh only</strong><small>Respect the source freshness window</small></span></label><label className="toggle-field"><input type="checkbox" checked={smartQuery} onChange={(e) => setSmartQuery(e.target.checked)} /><span><strong>Smart parsing</strong><small>Read quantity and INR budget</small></span></label></div>
     <p className="notice">{message}</p>
-    {selectedIds.length > 0 && <aside className="compare-bar"><span>{selectedIds.length} selected</span><button onClick={compare} disabled={selectedIds.length < 2}>Compare selected</button><button className="secondary" onClick={() => { setSelectedIds([]); setComparison(null); }}>Clear</button></aside>}
+    {selectedIds.length > 0 && <aside className="compare-bar"><span>{selectedIds.length} selected</span><button onClick={compare} disabled={selectedIds.length < 2}>Compare selected</button><button className="secondary" onClick={() => { setSelectedIds([]); setSelectedProductId(null); setComparison(null); }}>Clear</button></aside>}
     {comparison && <section className="comparison" aria-live="polite"><div><p className="eyebrow">COMPARISON</p><h2>{comparison.product.normalized_name}</h2><p>Requested quantity: {comparison.quantity ?? "not specified"}</p></div><div className="comparison-grid">{comparison.offers.map((offer) => <div className="comparison-card" key={offer.offer_id}><strong>{offer.seller_name}</strong><span>{offer.source_name} · {offer.freshness}</span><strong>{offer.price_status === "public" ? `${offer.currency ?? ""} ${offer.price} / ${offer.unit ?? "unit"}` : "Request quote"}</strong><span>MOQ {offer.moq ?? "unknown"} · {offer.availability ?? "unknown"}</span><div className="badges">{offer.badges.map((badge, index) => <span key={`${badge.kind}-${index}`}>{badge.label}</span>)}</div></div>)}</div><p className="notice">{comparison.warnings[0]}</p></section>}
-    <section aria-live="polite">{groups.map((group) => <article key={group.product.id}><div><p className="eyebrow">{group.product.category ?? "Unclassified"}</p><h2>{group.product.normalized_name}</h2><p>{group.product.manufacturer ?? "Manufacturer unknown"}{group.product.mpn ? ` · ${group.product.mpn}` : ""}</p></div><div className="offers">{group.offers.map((offer) => <div className="offer" key={offer.id}><label className="select"><input type="checkbox" checked={selectedIds.includes(offer.id)} onChange={() => toggle(offer.id)} /> Compare</label><div><strong>{offer.seller_name}</strong><span>{offer.source_name} · {offer.freshness}</span></div><div><strong>{offer.price_status === "public" ? `${offer.currency ?? ""} ${offer.price} / ${offer.unit ?? "unit"}` : "Request quote"}</strong><span>MOQ {offer.moq ?? "unknown"} · {offer.availability ?? "availability unknown"}</span></div><a className="seller-link" href={`${apiBase()}/outbound/${offer.id}?placement=result`} target="_blank" rel="noreferrer">Visit seller <span aria-hidden="true">↗</span></a><p>{offer.reasons.join(" · ")}</p></div>)}</div></article>)}</section>
+    <section aria-live="polite">{groups.map((group) => <article key={group.product.id}><div><p className="eyebrow">{group.product.category ?? "Unclassified"}</p><h2>{group.product.normalized_name}</h2><p>{group.product.manufacturer ?? "Manufacturer unknown"}{group.product.mpn ? ` · ${group.product.mpn}` : ""}</p></div><div className="offers">{group.offers.map((offer) => <div className="offer" key={offer.id}><label className="select"><input type="checkbox" checked={selectedIds.includes(offer.id)} disabled={selectedProductId !== null && selectedProductId !== group.product.id && !selectedIds.includes(offer.id)} onChange={() => toggle(offer.id, group.product.id)} /> Compare</label><div><strong>{offer.seller_name}</strong><span>{offer.source_name} · {offer.freshness}</span></div><div><strong>{offer.price_status === "public" ? `${offer.currency ?? ""} ${offer.price} / ${offer.unit ?? "unit"}` : "Request quote"}</strong><span>MOQ {offer.moq ?? "unknown"} · {offer.availability ?? "availability unknown"}</span></div><a className="seller-link" href={`${apiBase()}/outbound/${offer.id}?placement=result`} target="_blank" rel="noreferrer">Visit seller <span aria-hidden="true">↗</span></a><p>{offer.reasons.join(" · ")}</p></div>)}</div></article>)}</section>
   </main>;
 }

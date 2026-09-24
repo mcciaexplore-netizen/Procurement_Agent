@@ -1,0 +1,14 @@
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.venv
+**/venv
+**/env
+node_modules
+**/node_modules
+.git
+.github
+.claude
+_plan_review
+.env

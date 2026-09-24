@@ -218,8 +218,14 @@ def search(
 
 
 @app.get("/search/facets")
-def search_facets() -> dict[str, list[dict[str, object]]]:
-    return catalog.search_facets()
+def search_facets(
+    q: str | None = None,
+    category: str | None = None,
+    manufacturer: str | None = None,
+    price_status: PriceStatus | None = None,
+    fresh_only: bool = False,
+) -> dict[str, list[dict[str, object]]]:
+    return catalog.search_facets(q, category, manufacturer, price_status, fresh_only)
 
 
 @app.get("/products/{product_id}")
