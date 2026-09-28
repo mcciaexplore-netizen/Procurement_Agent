@@ -1,11 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { ComparisonBar } from "./components/ComparisonBar";
+import { ComparisonMatrixModal } from "./components/ComparisonMatrixModal";
 
 type Offer = { id: string; seller_name: string; source_name: string; price_status: string; price: string | null; currency: string | null; unit: string | null; moq: number | null; availability: string | null; freshness: string; reasons: string[] };
 type Group = { product: { id: string; manufacturer: string | null; mpn: string | null; normalized_name: string; category: string | null }; offers: Offer[] };
-type ComparedOffer = { offer_id: string; seller_name: string; source_name: string; price_status: string; price: string | null; currency: string | null; unit: string | null; moq: number | null; availability: string | null; freshness: string; quantity_eligible: boolean; price_comparable: boolean; badges: { kind: string; label: string }[] };
-type Comparison = { product: { normalized_name: string; mpn: string | null }; quantity: number | null; offers: ComparedOffer[]; warnings: string[] };
+export type ComparedOffer = { offer_id: string; seller_name: string; source_name: string; price_status: string; price: string | null; currency: string | null; unit: string | null; moq: number | null; availability: string | null; freshness: string; quantity_eligible: boolean; price_comparable: boolean; badges: { kind: string; label: string }[] };
+export type Comparison = { product: { normalized_name: string; mpn: string | null }; quantity: number | null; offers: ComparedOffer[]; warnings: string[] };
 type Facet = { value: string; count: number };
 type Facets = { categories: Facet[]; manufacturers: Facet[]; price_statuses: Facet[] };
 
@@ -19,6 +21,7 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [comparisonModalOpen, setComparisonModalOpen] = useState(false);
   const [facets, setFacets] = useState<Facets>({ categories: [], manufacturers: [], price_statuses: [] });
   const [category, setCategory] = useState("");
   const [manufacturer, setManufacturer] = useState("");
@@ -85,6 +88,7 @@ export default function Home() {
       setSelectedIds([]);
       setSelectedProductId(null);
       setComparison(null);
+      setComparisonModalOpen(false);
       const baseMessage = payload.groups.length ? "Prices, terms, and availability come from the source and may be incomplete." : "No current approved-source results. Try a part number or broader term.";
       const liveWarnings: string[] = (payload.warnings ?? []).slice(1);
       setMessage(liveWarnings.length ? `${baseMessage} ${liveWarnings.join(" ")}` : baseMessage);
@@ -111,11 +115,16 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, manufacturer, priceStatus, freshOnly, smartQuery]);
 
+  function removeSelection(offerId: string) {
+    const next = selectedIds.filter((id) => id !== offerId);
+    setSelectedIds(next);
+    if (next.length === 0) setSelectedProductId(null);
+    return next;
+  }
+
   function toggle(offerId: string, productId: string) {
     if (selectedIds.includes(offerId)) {
-      const next = selectedIds.filter((id) => id !== offerId);
-      setSelectedIds(next);
-      if (next.length === 0) setSelectedProductId(null);
+      removeSelection(offerId);
       return;
     }
     // Offers can only be compared within the same product group (the API
@@ -131,28 +140,52 @@ export default function Home() {
     setSelectedProductId(productId);
   }
 
-  async function compare() {
-    if (selectedIds.length < 2) return;
+  async function compareOffers(ids: string[]) {
+    if (ids.length < 2) {
+      setComparison(null);
+      setComparisonModalOpen(false);
+      return;
+    }
     const params = new URLSearchParams();
-    selectedIds.forEach((id) => params.append("offer_id", id));
+    ids.forEach((id) => params.append("offer_id", id));
     if (quantity) params.set("quantity", quantity);
     try {
       const response = await fetch(`${apiBase()}/compare?${params}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "Comparison failed");
       setComparison(payload);
+      setComparisonModalOpen(true);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not compare those offers.");
     }
   }
+
+  function removeFromComparison(offerId: string) {
+    const next = removeSelection(offerId);
+    if (next.length < 2) {
+      setComparison(null);
+      setComparisonModalOpen(false);
+      return;
+    }
+    compareOffers(next);
+  }
+
+  function clearComparison() {
+    setSelectedIds([]);
+    setSelectedProductId(null);
+    setComparison(null);
+    setComparisonModalOpen(false);
+  }
+
+  const selectedOffers = groups.flatMap((group) => group.offers).filter((offer) => selectedIds.includes(offer.id)).map((offer) => ({ id: offer.id, seller_name: offer.seller_name }));
 
   return <main><header><p className="eyebrow">PERMISSION-FIRST PROCUREMENT SEARCH</p><h1>Find the right part. See the trade-offs.</h1><p>Compare current supplier offers, then continue with the original seller.</p></header>
     <form className="search-panel" onSubmit={submit}><label>Part number or requirement<input list="part-suggestions" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Part number or requirement" placeholder="e.g. STM32F407VGT6" /></label><datalist id="part-suggestions">{partSuggestions.map((part) => <option key={part} value={part} />)}</datalist><label>Quantity<input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} aria-label="Quantity" /></label><button type="submit">Search offers</button></form>
     <div className="suggestions" aria-label="Popular part suggestions"><span>Try a part:</span>{partSuggestions.map((part) => <button type="button" key={part} onClick={() => setQuery(part)}>{part}</button>)}</div>
     <div className="filters" aria-label="Search filters"><div className="filter-heading"><strong>REFINE RESULTS</strong><span>Use the controls below to narrow approved supplier offers.</span></div><label className="filter-field">Category<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All categories</option>{facets.categories.map((facet) => <option key={facet.value} value={facet.value}>{facet.value} ({facet.count})</option>)}</select></label><label className="filter-field">Manufacturer<select value={manufacturer} onChange={(e) => setManufacturer(e.target.value)}><option value="">All manufacturers</option>{facets.manufacturers.map((facet) => <option key={facet.value} value={facet.value}>{facet.value} ({facet.count})</option>)}</select></label><label className="filter-field">Price status<select value={priceStatus} onChange={(e) => setPriceStatus(e.target.value)}><option value="">Any price status</option>{facets.price_statuses.map((facet) => <option key={facet.value} value={facet.value}>{facet.value.replace("_", " ")} ({facet.count})</option>)}</select></label><label className="toggle-field"><input type="checkbox" checked={freshOnly} onChange={(e) => setFreshOnly(e.target.checked)} /><span><strong>Fresh only</strong><small>Respect the source freshness window</small></span></label><label className="toggle-field"><input type="checkbox" checked={smartQuery} onChange={(e) => setSmartQuery(e.target.checked)} /><span><strong>Smart parsing</strong><small>Read quantity and INR budget</small></span></label></div>
     <p className="notice">{message}</p>
-    {selectedIds.length > 0 && <aside className="compare-bar"><span>{selectedIds.length} selected</span><button onClick={compare} disabled={selectedIds.length < 2}>Compare selected</button><button className="secondary" onClick={() => { setSelectedIds([]); setSelectedProductId(null); setComparison(null); }}>Clear</button></aside>}
-    {comparison && <section className="comparison" aria-live="polite"><div><p className="eyebrow">COMPARISON</p><h2>{comparison.product.normalized_name}</h2><p>Requested quantity: {comparison.quantity ?? "not specified"}</p></div><div className="comparison-grid">{comparison.offers.map((offer) => <div className="comparison-card" key={offer.offer_id}><strong>{offer.seller_name}</strong><span>{offer.source_name} · {offer.freshness}</span><strong>{offer.price_status === "public" ? `${offer.currency ?? ""} ${offer.price} / ${offer.unit ?? "unit"}` : "Request quote"}</strong><span>MOQ {offer.moq ?? "unknown"} · {offer.availability ?? "unknown"}</span><div className="badges">{offer.badges.map((badge, index) => <span key={`${badge.kind}-${index}`}>{badge.label}</span>)}</div></div>)}</div><p className="notice">{comparison.warnings[0]}</p></section>}
+    {comparisonModalOpen && comparison && <ComparisonMatrixModal comparison={comparison} onClose={() => setComparisonModalOpen(false)} onRemove={removeFromComparison} />}
     <section aria-live="polite">{groups.map((group) => <article key={group.product.id}><div><p className="eyebrow">{group.product.category ?? "Unclassified"}</p><h2>{group.product.normalized_name}</h2><p>{group.product.manufacturer ?? "Manufacturer unknown"}{group.product.mpn ? ` · ${group.product.mpn}` : ""}</p></div><div className="offers">{group.offers.map((offer) => <div className="offer" key={offer.id}><label className="select"><input type="checkbox" checked={selectedIds.includes(offer.id)} disabled={selectedProductId !== null && selectedProductId !== group.product.id && !selectedIds.includes(offer.id)} onChange={() => toggle(offer.id, group.product.id)} /> Compare</label><div><strong>{offer.seller_name}</strong><span>{offer.source_name} · {offer.freshness}</span></div><div><strong>{offer.price_status === "public" ? `${offer.currency ?? ""} ${offer.price} / ${offer.unit ?? "unit"}` : "Request quote"}</strong><span>MOQ {offer.moq ?? "unknown"} · {offer.availability ?? "availability unknown"}</span></div><a className="seller-link" href={`${apiBase()}/outbound/${offer.id}?placement=result`} target="_blank" rel="noreferrer">Visit seller <span aria-hidden="true">↗</span></a><p>{offer.reasons.join(" · ")}</p></div>)}</div></article>)}</section>
+    <ComparisonBar offers={selectedOffers} maxSlots={5} onRemove={removeSelection} onClear={clearComparison} onCompare={() => compareOffers(selectedIds)} />
   </main>;
 }
