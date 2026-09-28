@@ -61,8 +61,19 @@ def element14_products_to_rows(response: dict[str, object], store_id: str) -> li
         if not sku or not title:
             continue
         prices = item.get("prices")
-        first = prices[0] if isinstance(prices, list) and prices and isinstance(prices[0], dict) else {}
-        price = _number(first.get("cost"))
+        price_tiers = sorted(
+            (
+                (int(price_break["from"]), _number(price_break.get("cost")))
+                for price_break in prices or []
+                if isinstance(price_break, dict) and isinstance(price_break.get("from"), (int, float)) and _number(price_break.get("cost"))
+            ),
+            key=lambda tier: tier[0],
+        )
+        quantity_breaks = ";".join(
+            f"{minimum}-{price_tiers[index + 1][0] - 1}:{price}" if index + 1 < len(price_tiers) else f"{minimum}+:{price}"
+            for index, (minimum, price) in enumerate(price_tiers)
+        )
+        price = price_tiers[0][1] if price_tiers else ""
         mpn = _text(item.get("translatedManufacturerPartNumber"))
         supplied_url = _text(item.get("productURL"))
         parsed_url = urlparse(supplied_url)
@@ -73,7 +84,7 @@ def element14_products_to_rows(response: dict[str, object], store_id: str) -> li
             "title": title, "seller_name": "element14", "manufacturer": _text(item.get("brandName")),
             "mpn": mpn, "category": "Electronic Components", "price": price, "currency": "INR" if price else "",
             "unit": _text(item.get("unitOfMeasure")).lower() or "each", "price_status": "public" if price else "unknown",
-            "quantity_breaks": f"1+:{price}" if price else "", "moq": str(item.get("translatedMinimumOrderQuality") or ""),
+            "quantity_breaks": quantity_breaks, "moq": str(item.get("translatedMinimumOrderQuality") or ""),
             "pack_quantity": str(item.get("packSize") or ""), "availability": _text(item.get("productStatus")),
             "tax_included": "", "shipping_included": "",
         })

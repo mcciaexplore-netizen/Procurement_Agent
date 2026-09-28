@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./styles.css";
+import { Navbar } from "./components/Navbar";
 
 export const metadata: Metadata = { title: "ProcureFind", description: "Permission-first supplier offer search" };
 
@@ -7,10 +8,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
   return (
     <html lang="en">
       <body>
-        <div className="brand-lockup">
-          <span>AI Procurement Agent</span>
-          <img src="/mccia-logo-cropped.png" alt="MCCIA" className="mccia-logo" />
-        </div>
+        <Navbar />
         {children}
       </body>
     </html>

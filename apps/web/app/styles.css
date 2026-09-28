@@ -450,31 +450,201 @@ article {
     transform: translateY(-1px)
 }
 
-.brand-lockup {
+.site-navbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    margin-bottom: 36px;
+    background: rgba(255, 255, 255, .82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(201, 214, 220, .6);
+    transition: all .3s ease
+}
+
+.site-navbar__row {
+    max-width: 1180px;
+    margin: 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
-    margin-bottom: 42px;
-    padding: 14px 28px;
-    border-bottom: 1px solid #d7e2e6;
-    background: rgba(255, 255, 255, .94);
-    color: #0875bc;
-    font-size: 15px;
-    font-weight: 850;
-    letter-spacing: .02em
+    padding: 18px 28px;
+    transition: padding .3s ease
 }
 
-.brand-lockup img {
+.site-navbar--scrolled .site-navbar__row {
+    padding-top: 10px;
+    padding-bottom: 10px
+}
+
+.site-navbar__brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0
+}
+
+.site-navbar__logo {
     display: block;
+    height: 40px;
     width: auto;
-    height: 92px;
-    object-fit: contain
+    object-fit: contain;
+    transition: height .3s ease
 }
 
-.brand-lockup .mccia-logo {
-    height: 50px;
-    margin-left: auto
+.site-navbar--scrolled .site-navbar__logo {
+    height: 32px
+}
+
+.site-navbar__divider {
+    width: 1px;
+    height: 32px;
+    background: rgba(72, 101, 129, .28);
+    flex-shrink: 0
+}
+
+.site-navbar__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0
+}
+
+.site-navbar__title {
+    display: block;
+    font-weight: 750;
+    letter-spacing: -.01em;
+    font-size: 16px;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis
+}
+
+.site-navbar__title-short {
+    display: none
+}
+
+.site-navbar__tagline {
+    align-self: flex-start;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: rgba(8, 127, 114, .1);
+    color: var(--accent-dark);
+    border: 1px solid rgba(8, 127, 114, .2);
+    white-space: nowrap
+}
+
+.site-navbar__links {
+    display: flex;
+    align-items: center;
+    gap: 22px
+}
+
+.site-navbar__link {
+    font-size: 14px;
+    font-weight: 750;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color .15s ease
+}
+
+.site-navbar__link:hover {
+    color: var(--accent-dark)
+}
+
+.site-navbar__menu-button {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    gap: 4px;
+    width: 36px;
+    min-height: 36px;
+    padding: 0;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px
+}
+
+.site-navbar__menu-button span {
+    display: block;
+    height: 2px;
+    margin: 0 7px;
+    background: var(--ink);
+    border-radius: 1px
+}
+
+.site-navbar__menu-button:hover {
+    background: var(--soft);
+    transform: none
+}
+
+.site-navbar__mobile-menu {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 28px 18px;
+    border-top: 1px solid rgba(201, 214, 220, .6)
+}
+
+.site-navbar__mobile-link {
+    padding: 12px 0;
+    font-size: 15px;
+    font-weight: 750;
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid #eef4f5
+}
+
+.site-navbar__mobile-link:last-child {
+    border-bottom: 0
+}
+
+@media (max-width: 1023px) {
+    .site-navbar__links {
+        display: none
+    }
+
+    .site-navbar__menu-button {
+        display: flex
+    }
+}
+
+@media (min-width: 1024px) {
+    .site-navbar__mobile-menu {
+        display: none
+    }
+}
+
+@media (max-width: 767px) {
+    .site-navbar__row {
+        padding: 14px 18px
+    }
+
+    .site-navbar__logo {
+        height: 30px
+    }
+
+    .site-navbar__divider {
+        height: 26px
+    }
+
+    .site-navbar__title-full {
+        display: none
+    }
+
+    .site-navbar__title-short {
+        display: inline
+    }
+
+    .site-navbar__tagline {
+        display: none
+    }
 }
 
 body {
